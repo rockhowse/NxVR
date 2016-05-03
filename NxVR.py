@@ -10,5 +10,5 @@ def show_vr():
 
 if __name__ == '__main__':
     app.run(
-        host='10.0.0.228'
+        host='0.0.0.0'
     )
