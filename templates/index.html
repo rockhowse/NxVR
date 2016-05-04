@@ -1,153 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <title>NxVR</title>
+  <head>
+    <title>Cardboard Example</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
-        body {
-            margin: 0px;
-            overflow: hidden;
-        }
-        #example {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-        }
+      body {
+        margin: 0px;
+        overflow: hidden;
+      }
+      #example {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div id="example"></div>
 
-    <script src="../static/js/third-party/threejs/three.js"></script>
-    <script src="../static/js/third-party/threejs/StereoEffect.js"></script>
-    <script src="../static/js/third-party/threejs/DeviceOrientationControls.js"></script>
-    <script src="../static/js/third-party/threejs/OrbitControls.js"></script>
+  <script src="../static/js/third-party/threejs/three.js"></script>
+  <script src="../static/js/third-party/threejs/StereoEffect.js"></script>
+  <script src="../static/js/third-party/threejs/DeviceOrientationControls.js"></script>
+  <script src="../static/js/third-party/threejs/OrbitControls.js"></script>
 
-    <script>
-        var camera, scene, renderer;
-        var effect, controls;
-        var element, container;
-        var clock = new THREE.Clock();
+  <script type="x-shader/x-vertex" id="vertexshader">
+      attribute float size;
+      attribute vec3 customColor;
+      varying vec3 vColor;
+      void main() {
+          vColor = customColor;
+          vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+          gl_PointSize = size * ( 300.0 / -mvPosition.z );
+          gl_Position = projectionMatrix * mvPosition;
+      }
+  </script>
 
-        init();
-        animate();
+  <script type="x-shader/x-fragment" id="fragmentshader">
+      uniform vec3 color;
+      uniform sampler2D texture;
+      varying vec3 vColor;
+      void main() {
+          gl_FragColor = vec4( color * vColor, 1.0 );
+          gl_FragColor = gl_FragColor * texture2D( texture, gl_PointCoord );
+          if ( gl_FragColor.a < ALPHATEST ) discard;
+      }
+  </script>
 
-        function init() {
-            renderer = new THREE.WebGLRenderer();
-            element = renderer.domElement;
-            container = document.getElementById('example');
-            container.appendChild(element);
 
-            effect = new THREE.StereoEffect(renderer);
-            scene = new THREE.Scene()
+  <script>
+    var camera, scene, renderer;
+    var effect, controls;
+    var element, container;
 
-            camera = new THREE.PerspectiveCamera(90, 1, 0.001, 700);
-            camera.position.set(0, 10, 0);
-            scene.add(camera);
+    var clock = new THREE.Clock();
 
-            controls = new THREE.OrbitControls(camera, element);
-            controls.rotateUp(Math.PI / 4);
-            controls.target.set(
-                    camera.position.x + 0.1,
-                    camera.position.y,
-                    camera.position.z
-            );
-            controls.noZoom = true;
-            controls.noPan = true;
+    var particles, uniforms;
+    var PARTICLE_SIZE = 20;
+    var raycaster, intersects;
+    var mouse, INTERSECTED;
 
-            function setOrientationControls(evt) {
-                if (!evt.alpha) {
-                    return;
-                }
+    init();
+    animate();
 
-                controls = new THREE.DeviceOrientationControls(camera, true);
-                controls.connect();
-                controls.update();
+    function drawParticles(scene) {
 
-                element.addEventListener('click', fullscreen, false);
+       // create the particle variables
+      var particleCount = 10,
+          particles = new THREE.Geometry(),
+          pMaterial = new THREE.PointsMaterial({
+            color: 0xFFFFFF,
+            size: 5
+          });
 
-                window.removeEventListener('deviceorientation', setOrientationControls, true);
-            }
-            window.addEventListener('deviceorientation', setOrientationControls, true);
 
-            var light = new THREE.HemisphereLight(0x777777, 0x000000, 0.6);
-            scene.add(light);
+      var partHeight = 20;
+      var partWidth  = 20;
+      var partDepth  = 20;
 
-            var texture = THREE.ImageUtils.loadTexture(
-                    '../static/textures/patterns/checker.png'
-            );
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat = new THREE.Vector2(50, 50);
-            texture.anisotropy = renderer.getMaxAnisotropy();
+      var pX = 10;
+      var pY = 10;
+      var pZ = 20;
 
-            var material = new THREE.MeshPhongMaterial({
-                color: 0xffffff,
-                specular: 0xffffff,
-                shininess: 20,
-                shading: THREE.FlatShading,
-                map: texture
-            });
+      // now create the individual particles
+      for (var p = 0; p < particleCount; p++) {
 
-            var geometry = new THREE.PlaneGeometry(1000, 1000);
+        // create a particle with random
+        // position values, -250 -> 250
 
-            var sphere_geometry = new THREE.SphereGeometry( 5, 32, 32 );
-            var sphere_material = new THREE.MeshBasicMaterial( {color: 0xffff00} );
-            var sphere = new THREE.Mesh( sphere_geometry, sphere_material );
-            scene.add( sphere );
+        particle = new THREE.Vector3(pX, pY, pZ);
 
-            var mesh = new THREE.Mesh(geometry, material);
-            mesh.rotation.x = -Math.PI / 2;
-            scene.add(mesh);
+        pY += 10;
+        pX -= 10;
 
-            window.addEventListener('resize', resize, false);
-            setTimeout(resize, 1);
+        // add it to the geometry
+        particles.vertices.push(particle);
+      }
+
+       // create the particle variables
+      var pMaterial = new THREE.ParticleBasicMaterial({
+        color: 0xFFFFFF,
+        size: 2,
+        map: THREE.ImageUtils.loadTexture(
+          "static/textures/sprites/disc.png"
+        ),
+        blending: THREE.AdditiveBlending,
+        transparent: true
+      });
+
+      // create the particle system
+      var particleSystem = new THREE.Points(
+          particles,
+          pMaterial);
+
+      // also update the particle system to
+      // sort the particles which enables
+      // the behaviour we want
+      particleSystem.sortParticles = true;
+
+      // add it to the scene
+      scene.add(particleSystem);
+    }
+
+    function init() {
+
+      renderer = new THREE.WebGLRenderer();
+      element = renderer.domElement;
+      container = document.getElementById('example');
+      container.appendChild(element);
+
+      effect = new THREE.StereoEffect(renderer);
+
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(90, 1, 0.001, 700);
+      camera.position.set(0, 10, 0);
+      scene.add(camera);
+
+      controls = new THREE.OrbitControls(camera, element);
+
+      controls.rotateUp(Math.PI / 4);
+      controls.target.set(
+        camera.position.x + 0.1,
+        camera.position.y,
+        camera.position.z
+      );
+
+      controls.noZoom = true;
+      controls.noPan = true;
+
+      function setOrientationControls(e) {
+        if (!e.alpha) {
+          return;
         }
 
-        function resize() {
-            var width = container.offsetWidth;
-            var height = container.offsetHeight;
+        controls = new THREE.DeviceOrientationControls(camera, true);
+        controls.connect();
+        controls.update();
 
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
+        element.addEventListener('click', fullscreen, false);
 
-            renderer.setSize(width, height);
-            effect.setSize(width, height);
-        }
+        window.removeEventListener('deviceorientation', setOrientationControls, true);
+      }
+      window.addEventListener('deviceorientation', setOrientationControls, true);
 
-        function update(dt) {
-            resize();
 
-            camera.updateProjectionMatrix();
+      var light = new THREE.HemisphereLight(0x777777, 0x000000, 0.6);
+      scene.add(light);
 
-            controls.update(dt);
-        }
+      var texture = THREE.ImageUtils.loadTexture(
+        '../static/textures/patterns/checker.png'
+      );
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat = new THREE.Vector2(50, 50);
+      texture.anisotropy = renderer.getMaxAnisotropy();
 
-        function render(dt) {
-            effect.render(scene, camera);
-        }
+      var material = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        specular: 0xffffff,
+        shininess: 20,
+        shading: THREE.FlatShading,
+        map: texture
+      });
 
-        function animate(t) {
-            requestAnimationFrame(animate);
+      var geometry = new THREE.PlaneGeometry(1000, 1000);
 
-            update(clock.getDelta());
-            render(clock.getDelta());
-        }
+      var mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = -Math.PI / 2;
+      scene.add(mesh);
 
-        function fullscreen() {
-            if (container.requestFullscreen) {
-                container.requestFullscreen();
-            } else if (container.msRequestFullscreen) {
-                container.msRequestFullscreen();
-            } else if (container.mozRequestFullScreen) {
-                container.mozRequestFullScreen();
-            } else if (container.webkitRequestFullscreen) {
-                container.webkitRequestFullscreen();
-            }
-        }
-    </script>
-</body>
+      drawParticles(scene);
+
+      window.addEventListener('resize', resize, false);
+      setTimeout(resize, 1);
+    }
+
+    function resize() {
+      var width = container.offsetWidth;
+      var height = container.offsetHeight;
+
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(width, height);
+      effect.setSize(width, height);
+    }
+
+    function update(dt) {
+      resize();
+
+      camera.updateProjectionMatrix();
+
+      controls.update(dt);
+    }
+
+    function render(dt) {
+
+      /*
+      var geometry = particles.geometry;
+      var attributes = geometry.attributes;
+
+      raycaster.setFromCamera( mouse, camera );
+
+      intersects = raycaster.intersectObject( particles );
+
+      if ( intersects.length > 0 ) {
+
+          if ( INTERSECTED != intersects[ 0 ].index ) {
+              attributes.size.array[ INTERSECTED ] = PARTICLE_SIZE;
+              INTERSECTED = intersects[ 0 ].index;
+              attributes.size.array[ INTERSECTED ] = PARTICLE_SIZE * 1.25;
+              attributes.size.needsUpdate = true;
+          }
+
+      } else if ( INTERSECTED !== null ) {
+          attributes.size.array[ INTERSECTED ] = PARTICLE_SIZE;
+          attributes.size.needsUpdate = true;
+          INTERSECTED = null;
+      }
+      */
+
+      effect.render(scene, camera);
+    }
+
+    function animate(t) {
+      requestAnimationFrame(animate);
+
+      update(clock.getDelta());
+      render(clock.getDelta());
+    }
+
+    function fullscreen() {
+      if (container.requestFullscreen) {
+        container.requestFullscreen();
+      } else if (container.msRequestFullscreen) {
+        container.msRequestFullscreen();
+      } else if (container.mozRequestFullScreen) {
+        container.mozRequestFullScreen();
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      }
+    }
+  </script>
+  </body>
 </html>
